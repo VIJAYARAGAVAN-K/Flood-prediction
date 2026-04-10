@@ -44,20 +44,7 @@ This system can be further extended for real-world deployment by integrating liv
 * Designed data collection and processing pipeline
 * Implemented alert generation mechanism
 
-## Project Structure
 
-flood-prediction-iot/
-│── src/
-│   ├── main.py
-│   ├── model.py
-│   ├── data_processing.py
-│── data/
-│── images/
-│── README.md
-
-## How to Run
-
-python src/main.py
 
 ## Status
 
