@@ -1,0 +1,165 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+import tensorflow as tf
+from tensorflow.lite.python.interpreter import Interpreter
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from sklearn.metrics import confusion_matrix, classification_report
+from tkinter import Tk
+from tkinter.filedialog import askopenfilename
+import os
+
+# Suppress TensorFlow logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+# Function to upload a file
+def upload_file():
+    print("\nPlease upload a CSV file containing the data for training:")
+    Tk().withdraw()
+    file_path = askopenfilename(filetypes=[("CSV Files", "*.csv")])
+    if not file_path:
+        raise ValueError("No file selected. Please upload a CSV file.")
+    print(f"File uploaded successfully: {file_path}\n")
+    return file_path
+
+# Function to preprocess the data
+def preprocess_data(file_path):
+    data = pd.read_csv(file_path)
+    required_columns = ['Humidity', 'Rainfall', 'Water_Level', 'Air_Pressure', 'Temperature', 'Flood']
+    for col in required_columns:
+        if col not in data.columns:
+            raise ValueError(f"Missing required column: {col} in the uploaded file.")
+    features = data[required_columns[:-1]].values
+    target = data['Flood'].values
+    return features, target
+
+# Function to send an email alert
+def send_email(flood_status):
+    sender_email = ''
+    sender_password = ''  # App-specific password
+    recipient_email = ''
+    subject = 'Flood Prediction Alert'
+    message = (
+        "Alert: Flood Occurrence Predicted (Yes)"
+        if flood_status == 1
+        else "Update: No Flood Occurrence Predicted"
+    )
+
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = recipient_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(message, 'plain'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, recipient_email, msg.as_string())
+        server.quit()
+        print(f"\nEmail sent to {recipient_email} with message: {message}\n")
+    except Exception as e:
+        print(f"\nFailed to send email: {e}")
+
+# Function to convert the model to TensorFlow Lite
+def convert_to_tflite(model):
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    tflite_model = converter.convert()
+    with open("flood_model.tflite", "wb") as f:
+        f.write(tflite_model)
+    print("\nModel converted to TensorFlow Lite and saved as 'flood_model.tflite'")
+
+# Function to plot model performance
+def plot_model_performance(history):
+    plt.figure(figsize=(12, 6))
+
+    # Accuracy plot
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'], label='Training Accuracy', marker='o')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy', marker='o')
+    plt.title('Model Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+
+    # Loss plot
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'], label='Training Loss', marker='o')
+    plt.plot(history.history['val_loss'], label='Validation Loss', marker='o')
+    plt.title('Model Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+# Main script
+if __name__ == "__main__":
+    try:
+        # Upload and preprocess the dataset
+        file_path = upload_file()
+        features, target = preprocess_data(file_path)
+
+        # Scale the features
+        scaler = MinMaxScaler()
+        scaled_features = scaler.fit_transform(features)
+
+        # Reshape for LSTM
+        scaled_features = scaled_features.reshape((scaled_features.shape[0], 1, scaled_features.shape[1]))
+
+        # Split the data
+        split_index = int(len(features) * 0.8)
+        X_train, X_test = scaled_features[:split_index], scaled_features[split_index:]
+        y_train, y_test = target[:split_index], target[split_index:]
+
+        # Define and train the LSTM model
+        model = Sequential([
+            LSTM(100, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])),
+            Dropout(0.3),
+            LSTM(100, return_sequences=False),
+            Dropout(0.3),
+            Dense(50, activation='relu'),
+            Dropout(0.2),
+            Dense(1, activation='sigmoid')
+        ])
+
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+        history = model.fit(X_train, y_train, epochs=20, batch_size=64, validation_data=(X_test, y_test))
+
+        # Plot model performance
+        plot_model_performance(history)
+
+        # Convert the trained model to TensorFlow Lite
+        convert_to_tflite(model)
+
+        # User input for prediction
+        print("\nEnter the following values for prediction:")
+        user_input = np.array([[float(input("Humidity: ")), 
+                                float(input("Rainfall: ")), 
+                                float(input("Water Level: ")), 
+                                float(input("Air Pressure: ")), 
+                                float(input("Temperature: "))]])
+
+        scaled_input = scaler.transform(user_input).reshape(1, 1, 5)
+        flood_status = predict_with_tflite("flood_model.tflite", scaled_input)
+
+        # Output prediction
+        if flood_status == 1:
+            print("\nPrediction: Flood Occurrence Predicted (Yes)")
+        else:
+            print("\nPrediction: No Flood Occurrence Predicted")
+
+        # Send email alert
+        send_email(flood_status)
+
+    except Exception as e:
+        print(f"\nError: {e}")
+
