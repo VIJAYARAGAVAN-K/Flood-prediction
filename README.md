@@ -4,6 +4,10 @@
 
 An IoT-based system designed to predict flood conditions using real-time environmental data. The system collects sensor data, processes it using machine learning models, and generates early warning alerts to reduce potential risks.
 
+
+<img width="1619" height="904" alt="image" src="https://github.com/user-attachments/assets/ef248beb-b684-449c-96ab-8df66a507fd3" />
+
+
 ## Tech Stack
 
 * Python
