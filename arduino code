@@ -1,0 +1,118 @@
+#define BLYNK_TEMPLATE_ID "TMPL3lZwo9HpX"  // Replace with your Blynk Template ID
+#define BLYNK_TEMPLATE_NAME "ESP32 Weather Station"  // Replace with your Blynk Template Name
+#define BLYNK_AUTH_TOKEN "2guDDEmQyvkNgVH9XE_rXB9xDFSLJHJ7"  // Replace with your Blynk Auth Token
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <DHT.h>
+#include <Adafruit_BMP280.h>  // Include BMP280 library
+
+// WiFi Credentials
+const char* ssid = "Vijay1";  // Your WiFi SSID
+const char* password = "Vijay595";  // Your WiFi Password
+
+// Sensor Pin Definitions
+#define DHT_PIN 25              // Pin for DHT11 sensor
+#define DHT_TYPE DHT11          // DHT11 Sensor type
+#define ULTRASONIC_TRIG 26      // Ultrasonic sensor trigger pin
+#define ULTRASONIC_ECHO 27      // Ultrasonic sensor echo pin
+#define RAINFALL_ANALOG_PIN 33  // Rainfall sensor analog pin
+
+// I2C Pins for BMP280 (Default for ESP32)
+#define BMP_SDA 21  // I2C SDA pin
+#define BMP_SCL 22  // I2C SCL pin
+
+// Blynk Virtual Pin Mapping
+#define V0_HUMIDITY V0
+#define V1_RAINFALL V1
+#define V2_WATER_LEVEL V2
+#define V3_AIR_PRESSURE V3
+#define V4_TEMPERATURE V4
+
+// Initialize DHT sensor
+DHT dht(DHT_PIN, DHT_TYPE);
+
+// Initialize BMP280 sensor
+Adafruit_BMP280 bmp;
+
+void setup() {
+    Serial.begin(921600);
+    dht.begin();  // Start DHT sensor
+
+    // Initialize BMP280 sensor
+    if (!bmp.begin(0x76)) {  // 0x76 is the default I2C address for BMP280
+        Serial.println("Could not find BMP280 sensor!");
+        while (1);  // Halt if sensor is not found
+    }
+
+    // Connect to WiFi and Blynk
+    Blynk.begin(BLYNK_AUTH_TOKEN, ssid, password);
+    pinMode(ULTRASONIC_TRIG, OUTPUT);
+    pinMode(ULTRASONIC_ECHO, INPUT);
+    Serial.println("Connected to WiFi & Blynk!");
+}
+
+// Function to read DHT11 sensor (Temperature and Humidity)
+void readDHT(float &temperature, float &humidity) {
+    temperature = dht.readTemperature();  // Read temperature in °C
+    humidity = dht.readHumidity();        // Read humidity in %
+    if (isnan(temperature) || isnan(humidity)) {
+        Serial.println("Failed to read from DHT sensor!");
+    }
+}
+
+// Function to read Ultrasonic sensor (Water Level in cm)
+float readUltrasonic() {
+    digitalWrite(ULTRASONIC_TRIG, LOW);
+    delayMicroseconds(2);
+    digitalWrite(ULTRASONIC_TRIG, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(ULTRASONIC_TRIG, LOW);
+
+    long duration = pulseIn(ULTRASONIC_ECHO, HIGH);
+    float distance = (duration / 2.0) * 0.0343;  // Convert to cm
+    return distance;  // Return distance in cm
+}
+
+// Function to read Rainfall sensor (Analog value in mm)
+float readRainfall() {
+    int rainfallRaw = analogRead(RAINFALL_ANALOG_PIN);
+    float rainfall = map(rainfallRaw, 0, 4095, 0, 200);  // Map to 0-200mm range
+    return rainfall;
+}
+
+// Function to read BMP280 sensor (Pressure in hPa)
+float readPressure() {
+    float pressure = bmp.readPressure() / 100.0F;  // Read pressure in hPa
+    return pressure;
+}
+
+void loop() {
+    Blynk.run();  // Run Blynk
+
+    // Variables for sensors
+    float temperature, humidity, rainfall, pressure, waterLevel;
+
+    // Read sensors
+    readDHT(temperature, humidity);          // Read temperature and humidity from DHT11
+    waterLevel = readUltrasonic();           // Read water level from ultrasonic sensor
+    rainfall = readRainfall();               // Read rainfall sensor
+    pressure = readPressure();               // Read pressure sensor (BMP280)
+
+    // Send data to Blynk
+    Blynk.virtualWrite(V0_HUMIDITY, humidity);
+    Blynk.virtualWrite(V1_RAINFALL, rainfall);
+    Blynk.virtualWrite(V2_WATER_LEVEL, waterLevel);
+    Blynk.virtualWrite(V3_AIR_PRESSURE, pressure);
+    Blynk.virtualWrite(V4_TEMPERATURE, temperature);
+
+    // Print values to Serial Monitor
+    Serial.print("Temperature: "); Serial.print(temperature); Serial.println(" °C");
+    Serial.print("Humidity: "); Serial.print(humidity); Serial.println(" %");
+    Serial.print("Water Level: "); Serial.print(waterLevel); Serial.println(" cm");
+    Serial.print("Rainfall: "); Serial.print(rainfall); Serial.println(" mm");
+    Serial.print("Pressure: "); Serial.print(pressure); Serial.println(" hPa");
+    Serial.println("------------------------------------");
+
+    delay(5000);  // Send data every 5 seconds
+}
